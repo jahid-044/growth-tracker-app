@@ -8,5 +8,5 @@
 
 export declare interface AuthenticatedUser {
   id: string;
-  is_authority: boolean;
+  isAuthority: boolean;
 }

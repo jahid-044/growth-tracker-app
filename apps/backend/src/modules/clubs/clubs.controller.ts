@@ -45,9 +45,14 @@ export class ClubsController {
     return this.clubsService.findAll(caller);
   }
 
+  // Only the create-club form calls this, and creating a club is
+  // Authority-only, so the name check is too.
+  @ApiBearerAuth()
   @RequireRole('authority')
   @Get('check-name')
-  @ApiOperation({ summary: 'Check whether a club name is available (public)' })
+  @ApiOperation({
+    summary: 'Check whether a club name is available (Authority only)',
+  })
   checkName(@Query('name') name: string) {
     return this.clubsService.checkNameAvailable(name);
   }

@@ -47,7 +47,7 @@ describe('JwtAuthGuard', () => {
 
   it('passes when valid JWT in Authorization header', async () => {
     reflector.getAllAndOverride.mockReturnValue(false);
-    mockRequest.user = { id: 'user-1', is_authority: false };
+    mockRequest.user = { id: 'user-1', isAuthority: false };
 
     jest.spyOn(parentProto, 'canActivate').mockResolvedValue(true);
 

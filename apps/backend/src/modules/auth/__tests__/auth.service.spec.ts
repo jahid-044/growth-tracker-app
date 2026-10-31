@@ -12,6 +12,7 @@ const mockUser = {
   email: 'alice@dsinnovators.com',
   avatarUrl: 'https://example.com/avatar.png',
   isAuthority: false,
+  tokenVersion: 0,
   createdAt: new Date(),
 };
 
@@ -116,21 +117,151 @@ describe('AuthService', () => {
       expect(decoded['email']).toBe(mockUser.email);
       expect(decoded['isAuthority']).toBe(true);
     });
+
+    it('marks each token with its type and the user token version', () => {
+      const { accessToken, refreshToken } = service.generateTokens({
+        ...mockUser,
+        tokenVersion: 3,
+      });
+
+      const access = jwtService.decode<Record<string, unknown>>(accessToken);
+      const refresh = jwtService.decode<Record<string, unknown>>(refreshToken);
+
+      expect(access).toMatchObject({ typ: 'access', ver: 3 });
+      expect(refresh).toMatchObject({ typ: 'refresh', ver: 3 });
+    });
   });
 
-  describe('refreshAccessToken', () => {
-    it('returns new accessToken for valid refresh token', () => {
-      const { refreshToken } = service.generateTokens(mockUser);
-      const { accessToken } = service.refreshAccessToken(refreshToken);
+  /** The user row `resolveTokenUser` reads back for the token's `sub`. */
+  const givenUserRow = (rows: unknown[]) => {
+    mockDb.select.mockReturnValue({
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue(rows),
+    });
+  };
 
-      expect(typeof accessToken).toBe('string');
-      expect(accessToken.length).toBeGreaterThan(0);
+  describe('refreshAccessToken', () => {
+    it('returns new accessToken for valid refresh token', async () => {
+      givenUserRow([mockUser]);
+      const { refreshToken } = service.generateTokens(mockUser);
+
+      const result = await service.refreshAccessToken(refreshToken);
+
+      expect(Object.keys(result)).toEqual(['accessToken']);
+      expect(
+        jwtService.decode<Record<string, unknown>>(result.accessToken),
+      ).toMatchObject({ sub: mockUser.id, typ: 'access', ver: 0 });
     });
 
-    it('throws UnauthorizedException for expired or tampered token', () => {
-      expect(() => service.refreshAccessToken('tampered.token.here')).toThrow(
+    it('rejects an access token, so a session cannot renew itself', async () => {
+      givenUserRow([mockUser]);
+      const { accessToken } = service.generateTokens(mockUser);
+
+      await expect(service.refreshAccessToken(accessToken)).rejects.toThrow(
         UnauthorizedException,
       );
+      expect(mockDb.select).not.toHaveBeenCalled();
+    });
+
+    it('takes isAuthority from the database, not the old token', async () => {
+      const { refreshToken } = service.generateTokens({
+        ...mockUser,
+        isAuthority: true,
+      });
+      givenUserRow([{ ...mockUser, isAuthority: false }]);
+
+      const { accessToken } = await service.refreshAccessToken(refreshToken);
+
+      expect(
+        jwtService.decode<Record<string, unknown>>(accessToken)['isAuthority'],
+      ).toBe(false);
+    });
+
+    it('rejects a refresh token whose user no longer exists', async () => {
+      const { refreshToken } = service.generateTokens(mockUser);
+      givenUserRow([]);
+
+      await expect(service.refreshAccessToken(refreshToken)).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('rejects a refresh token revoked by a later logout', async () => {
+      const { refreshToken } = service.generateTokens(mockUser);
+      givenUserRow([{ ...mockUser, tokenVersion: 1 }]);
+
+      await expect(service.refreshAccessToken(refreshToken)).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('throws UnauthorizedException for expired or tampered token', async () => {
+      await expect(
+        service.refreshAccessToken('tampered.token.here'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('resolveTokenUser', () => {
+    const payload = {
+      sub: mockUser.id,
+      email: mockUser.email,
+      isAuthority: false,
+      typ: 'access' as const,
+      ver: 0,
+    };
+
+    it('returns the current user row for a live token', async () => {
+      givenUserRow([mockUser]);
+
+      await expect(
+        service.resolveTokenUser(payload, 'access'),
+      ).resolves.toEqual(mockUser);
+    });
+
+    it('returns null for a token of the other type', async () => {
+      await expect(
+        service.resolveTokenUser(payload, 'refresh'),
+      ).resolves.toBeNull();
+    });
+
+    it('returns null for a token issued before tokens were typed', async () => {
+      const legacy = {
+        sub: payload.sub,
+        email: payload.email,
+        isAuthority: payload.isAuthority,
+      } as unknown as typeof payload;
+
+      await expect(
+        service.resolveTokenUser(legacy, 'access'),
+      ).resolves.toBeNull();
+    });
+
+    it('returns null when the token version is stale', async () => {
+      givenUserRow([{ ...mockUser, tokenVersion: 2 }]);
+
+      await expect(
+        service.resolveTokenUser(payload, 'access'),
+      ).resolves.toBeNull();
+    });
+  });
+
+  describe('revokeTokens', () => {
+    it("bumps the user's token version", async () => {
+      const updateChain = {
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockResolvedValue(undefined),
+      };
+      mockDb.update.mockReturnValue(updateChain);
+
+      await service.revokeTokens('uuid-1');
+
+      expect(mockDb.update).toHaveBeenCalled();
+      const [changes] = updateChain.set.mock.calls[0] as [
+        Record<string, unknown>,
+      ];
+      expect(Object.keys(changes)).toEqual(['tokenVersion']);
+      expect(updateChain.where).toHaveBeenCalled();
     });
   });
 

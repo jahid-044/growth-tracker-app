@@ -46,6 +46,7 @@ export class AuthController {
         id: string;
         email: string;
         isAuthority: boolean | null;
+        tokenVersion: number;
       },
     );
     return res.redirect(
@@ -68,10 +69,13 @@ export class AuthController {
     return this.authService.refreshAccessToken(body.refreshToken);
   }
 
-  @Public()
+  @ApiBearerAuth()
   @Post('logout')
-  @ApiOperation({ summary: 'Logout — client clears tokens from localStorage' })
-  logout() {
+  @ApiOperation({
+    summary: 'Logout — revokes every token issued to the current user',
+  })
+  async logout(@CurrentUser() user: AuthenticatedUser) {
+    await this.authService.revokeTokens(user.userId);
     return { message: 'Logged out' };
   }
 }

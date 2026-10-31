@@ -4,7 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../core/database/database.service';
 import { clubsTable } from '../../core/database/schema/clubs.schema';
 import { topicMentorsTable } from '../../core/database/schema/topics.schema';
@@ -16,10 +16,28 @@ interface GoogleProfile {
   avatarUrl: string | null;
 }
 
-interface TokenPayload {
+export type TokenType = 'access' | 'refresh';
+
+export interface TokenPayload {
   sub: string;
   email: string;
   isAuthority: boolean;
+  /**
+   * Which job the token does. Both kinds share a secret, so without this an
+   * access token could refresh itself forever and a refresh token could call
+   * the API for its whole 7 days.
+   */
+  typ: TokenType;
+  /** The user's `token_version` when the token was issued. */
+  ver: number;
+}
+
+/** What a token needs from the user row to be signed or checked. */
+interface TokenSubject {
+  id: string;
+  email: string;
+  isAuthority: boolean | null;
+  tokenVersion: number;
 }
 
 @Injectable()
@@ -55,34 +73,72 @@ export class AuthService {
     return created;
   }
 
-  generateTokens(user: {
-    id: string;
-    email: string;
-    isAuthority: boolean | null;
-  }) {
-    const payload: TokenPayload = {
-      sub: user.id,
-      email: user.email,
-      isAuthority: user.isAuthority ?? false,
-    };
-    const accessToken = this.jwtService.sign(payload);
-    const refreshToken = this.jwtService.sign(payload, { expiresIn: '7d' });
+  generateTokens(user: TokenSubject) {
+    const accessToken = this.signToken(user, 'access');
+    const refreshToken = this.signToken(user, 'refresh');
     return { accessToken, refreshToken };
   }
 
-  refreshAccessToken(token: string) {
+  /**
+   * Trades a refresh token for a new access token, built from the user's
+   * current row rather than the old token's claims. No new refresh token is
+   * issued, so a session ends when the one from login expires.
+   */
+  async refreshAccessToken(token: string) {
     let payload: TokenPayload;
     try {
       payload = this.jwtService.verify<TokenPayload>(token);
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
-    const accessToken = this.jwtService.sign({
-      sub: payload.sub,
-      email: payload.email,
-      isAuthority: payload.isAuthority,
-    });
-    return { accessToken };
+    const user = await this.resolveTokenUser(payload, 'refresh');
+    if (!user) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+    return { accessToken: this.signToken(user, 'access') };
+  }
+
+  /**
+   * The user a verified token speaks for, read fresh from the database. Null
+   * when the token is the wrong type, the user is gone, or it was revoked.
+   */
+  async resolveTokenUser(payload: TokenPayload, typ: TokenType) {
+    if (payload.typ !== typ) return null;
+
+    const [user] = await this.db.db
+      .select({
+        id: usersTable.id,
+        email: usersTable.email,
+        isAuthority: usersTable.isAuthority,
+        tokenVersion: usersTable.tokenVersion,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, payload.sub));
+
+    if (!user || user.tokenVersion !== payload.ver) return null;
+    return user;
+  }
+
+  /** Invalidates every access and refresh token issued to the user so far. */
+  async revokeTokens(userId: string) {
+    await this.db.db
+      .update(usersTable)
+      .set({ tokenVersion: sql`${usersTable.tokenVersion} + 1` })
+      .where(eq(usersTable.id, userId));
+  }
+
+  private signToken(user: TokenSubject, typ: TokenType) {
+    const payload: TokenPayload = {
+      sub: user.id,
+      email: user.email,
+      isAuthority: user.isAuthority ?? false,
+      typ,
+      ver: user.tokenVersion,
+    };
+    // Access tokens take the module default expiry (4h).
+    return typ === 'refresh'
+      ? this.jwtService.sign(payload, { expiresIn: '7d' })
+      : this.jwtService.sign(payload);
   }
 
   async getMe(userId: string) {

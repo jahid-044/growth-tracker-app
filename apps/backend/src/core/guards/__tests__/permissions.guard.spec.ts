@@ -1,6 +1,10 @@
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
+import type {
+  AuthService,
+  TokenPayload,
+} from '../../../modules/auth/auth.service';
 import { JwtStrategy } from '../../../modules/auth/strategies/jwt.strategy';
 import { RequireRole } from '../../decorators/require-role.decorator';
 import { PermissionsGuard } from '../permissions.guard';
@@ -21,19 +25,20 @@ class AuthorityController {
 
 // The request user is whatever JwtStrategy.validate() returns, so build it
 // through the strategy instead of hand-writing its shape.
-const strategy = new JwtStrategy({
-  getOrThrow: () => 'test-jwt-secret',
-} as unknown as ConfigService);
-const member = strategy.validate({
-  sub: 'uid-member',
-  email: 'member@dsinnovators.com',
-  isAuthority: false,
-});
-const authority = strategy.validate({
-  sub: 'uid-authority',
-  email: 'authority@dsinnovators.com',
-  isAuthority: true,
-});
+const strategy = new JwtStrategy(
+  { getOrThrow: () => 'test-jwt-secret' } as unknown as ConfigService,
+  {
+    resolveTokenUser: (payload: TokenPayload) =>
+      Promise.resolve({
+        id: payload.sub,
+        email: payload.email,
+        isAuthority: payload.isAuthority,
+        tokenVersion: payload.ver,
+      }),
+  } as unknown as AuthService,
+);
+let member: object;
+let authority: object;
 
 const makeContext = (
   controller: new () => object,
@@ -49,6 +54,23 @@ const makeContext = (
 
 describe('PermissionsGuard', () => {
   const guard = new PermissionsGuard(new Reflector());
+
+  beforeAll(async () => {
+    member = await strategy.validate({
+      sub: 'uid-member',
+      email: 'member@dsinnovators.com',
+      isAuthority: false,
+      typ: 'access',
+      ver: 0,
+    });
+    authority = await strategy.validate({
+      sub: 'uid-authority',
+      email: 'authority@dsinnovators.com',
+      isAuthority: true,
+      typ: 'access',
+      ver: 0,
+    });
+  });
 
   it('throws 403 for a member on an @RequireRole("authority") handler', () => {
     expect(() =>

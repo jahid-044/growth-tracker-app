@@ -7,6 +7,7 @@ import { AuthService } from '../auth.service';
 const mockAuthService = {
   getMe: jest.fn(),
   refreshAccessToken: jest.fn(),
+  revokeTokens: jest.fn(),
 };
 
 const mockUser = {
@@ -51,12 +52,12 @@ describe('AuthController', () => {
   });
 
   describe('POST /auth/refresh', () => {
-    it('returns new accessToken for valid refresh token', () => {
-      mockAuthService.refreshAccessToken.mockReturnValue({
+    it('returns new accessToken for valid refresh token', async () => {
+      mockAuthService.refreshAccessToken.mockResolvedValue({
         accessToken: 'new-access-token',
       });
 
-      const result = controller.refresh({ refreshToken: 'valid-token' });
+      const result = await controller.refresh({ refreshToken: 'valid-token' });
 
       expect(mockAuthService.refreshAccessToken).toHaveBeenCalledWith(
         'valid-token',
@@ -64,21 +65,29 @@ describe('AuthController', () => {
       expect(result).toEqual({ accessToken: 'new-access-token' });
     });
 
-    it('returns 401 when refreshAccessToken throws UnauthorizedException', () => {
-      mockAuthService.refreshAccessToken.mockImplementation(() => {
-        throw new UnauthorizedException();
-      });
-
-      expect(() => controller.refresh({ refreshToken: 'bad-token' })).toThrow(
-        UnauthorizedException,
+    it('returns 401 when refreshAccessToken throws UnauthorizedException', async () => {
+      mockAuthService.refreshAccessToken.mockRejectedValue(
+        new UnauthorizedException(),
       );
+
+      await expect(
+        controller.refresh({ refreshToken: 'bad-token' }),
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 
   describe('POST /auth/logout', () => {
-    it('returns 200', () => {
-      const result = controller.logout();
+    it("revokes the caller's tokens", async () => {
+      mockAuthService.revokeTokens.mockResolvedValue(undefined);
+      const currentUser = {
+        userId: 'uuid-1',
+        email: 'alice@dsinnovators.com',
+        isAuthority: false,
+      };
 
+      const result = await controller.logout(currentUser);
+
+      expect(mockAuthService.revokeTokens).toHaveBeenCalledWith('uuid-1');
       expect(result).toEqual({ message: 'Logged out' });
     });
   });

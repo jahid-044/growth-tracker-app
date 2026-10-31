@@ -78,6 +78,13 @@
       "when": 1785178901785,
       "tag": "0010_attendance_optional",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793327868164,
+      "tag": "0011_token_version",
+      "breakpoints": true
     }
   ]
 }

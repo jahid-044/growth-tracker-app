@@ -32,8 +32,9 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     done?: VerifyCallback,
   ) {
     const email = profile.emails[0].value;
-    const allowedDomains = this.config
-      .get<string>('ALLOWED_EMAIL_DOMAINS', '')
+    const allowedDomains = (
+      this.config.get<string>('ALLOWED_EMAIL_DOMAINS') ?? ''
+    )
       .split(',')
       .map((d) => d.trim())
       .filter(Boolean);

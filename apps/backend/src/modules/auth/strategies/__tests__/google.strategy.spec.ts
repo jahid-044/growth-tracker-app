@@ -8,13 +8,11 @@ const mockAuthService = {
   upsertUser: jest.fn(),
 };
 
+let config: Record<string, string>;
+
 const mockConfigService = {
-  get: jest.fn((key: string) => {
-    const config: Record<string, string> = {
-      GOOGLE_CLIENT_ID: 'test-client-id',
-      GOOGLE_CLIENT_SECRET: 'test-client-secret',
-    };
-    return config[key];
+  get: jest.fn((key: string, defaultValue?: string) => {
+    return config[key] ?? defaultValue;
   }),
 };
 
@@ -23,6 +21,11 @@ describe('GoogleStrategy', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    config = {
+      GOOGLE_CLIENT_ID: 'test-client-id',
+      GOOGLE_CLIENT_SECRET: 'test-client-secret',
+      ALLOWED_EMAIL_DOMAINS: 'dsinnovators.com',
+    };
     const module = await Test.createTestingModule({
       providers: [
         GoogleStrategy,
@@ -67,4 +70,29 @@ describe('GoogleStrategy', () => {
     ).rejects.toThrow(UnauthorizedException);
     expect(mockAuthService.upsertUser).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['empty', ''],
+    ['unset', undefined],
+  ])(
+    'allows any email domain when ALLOWED_EMAIL_DOMAINS is %s',
+    async (_label, value) => {
+      if (value === undefined) delete config.ALLOWED_EMAIL_DOMAINS;
+      else config.ALLOWED_EMAIL_DOMAINS = value;
+      const profile = makeProfile('alice@gmail.com');
+      const mockUser = { id: 'uuid-2', email: 'alice@gmail.com' };
+      mockAuthService.upsertUser.mockResolvedValue(mockUser);
+
+      const result = await strategy.validate(
+        'accessToken',
+        'refreshToken',
+        profile,
+      );
+
+      expect(mockAuthService.upsertUser).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'alice@gmail.com' }),
+      );
+      expect(result).toEqual(mockUser);
+    },
+  );
 });

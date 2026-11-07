@@ -17,7 +17,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
         secret: config.getOrThrow<string>('JWT_SECRET'),
         // Default expiry for every token signed through this module — the
         // access token. The refresh token overrides it at the call site.
-        signOptions: { expiresIn: '4h' },
+        signOptions: { expiresIn: '15m' },
       }),
     }),
   ],

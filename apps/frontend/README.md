@@ -72,4 +72,4 @@ Login redirects to the backend's `/auth/google`. After Google authenticates, the
 
 From there, `store/auth.store.ts` decodes the access token for `userId`, `email`, and `isAuthority`, while coordinator and mentor status — which live in join tables and can't ride on the token — come from `/auth/me` through `features/auth/hooks/use-current-user.ts`.
 
-The axios request interceptor in `services/http/client.ts` attaches the bearer token to every call. Note that it does **not** yet refresh expired tokens: the refresh token is stored but `/auth/refresh` is never called, so a session ends when the 4-hour access token expires.
+The axios request interceptor in `services/http/client.ts` attaches the bearer token to every call. Note that it does **not** yet refresh expired tokens: the refresh token is stored but `/auth/refresh` is never called, so a session ends when the 15-minute access token expires.

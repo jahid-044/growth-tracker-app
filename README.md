@@ -269,7 +269,7 @@ No test runner is configured for the frontend yet.
 - `src/core/` — database connection and schema, global guards (`JwtAuthGuard`, `PermissionsGuard`), exception filter, decorators, pipes.
 - `src/modules/` — feature modules, each following a controller / service / repository split: `auth`, `user`, `clubs`, `topics`, `course-modules`, `enrollments`, `progress`, `sessions`, `dashboard`.
 
-**Auth flow**: `GET /auth/google` redirects to Google → `GET /auth/google/callback` upserts the user and redirects to the frontend with an access token (4h) and refresh token (7d) → `POST /auth/refresh` exchanges a refresh token for a new access token. `JwtAuthGuard` is applied globally; routes opt out with the `@Public()` decorator.
+**Auth flow**: `GET /auth/google` redirects to Google → `GET /auth/google/callback` upserts the user and redirects to the frontend with an access token (15m) and refresh token (5h) → `POST /auth/refresh` exchanges a refresh token for a new access token. `JwtAuthGuard` is applied globally; routes opt out with the `@Public()` decorator.
 
 **Schema** (`src/core/database/schema/`): `users` (with an `is_authority` flag), `clubs` and `club_memberships`, `topics` with `topic_mentors` and `topic_enrollments`, `course_modules` and `module_resources`, `tasks` and `task_submissions`, `module_progress` and `certifications`, `sessions`, `notifications`.
 

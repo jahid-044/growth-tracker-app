@@ -25,7 +25,7 @@ export interface TokenPayload {
   /**
    * Which job the token does. Both kinds share a secret, so without this an
    * access token could refresh itself forever and a refresh token could call
-   * the API for its whole 7 days.
+   * the API for its whole 5 hours.
    */
   typ: TokenType;
   /** The user's `token_version` when the token was issued. */
@@ -135,9 +135,9 @@ export class AuthService {
       typ,
       ver: user.tokenVersion,
     };
-    // Access tokens take the module default expiry (4h).
+    // Access tokens take the module default expiry (15m).
     return typ === 'refresh'
-      ? this.jwtService.sign(payload, { expiresIn: '7d' })
+      ? this.jwtService.sign(payload, { expiresIn: '5h' })
       : this.jwtService.sign(payload);
   }
 

@@ -94,7 +94,7 @@ Each feature module follows a controller / service / repository split, with unit
 | `POST /auth/refresh`        | Exchanges a refresh token for a new access token                    |
 | `POST /auth/logout`         | Client-side token clear                                             |
 
-Access tokens expire after 4 hours, refresh tokens after 7 days. Roles are derived from data rather than stored on the token: `is_authority` is a flag on `users`, while coordinator and mentor status come from `clubs.coordinator_id` and `topic_mentors`.
+Access tokens expire after 15 minutes, refresh tokens after 5 hours. Roles are derived from data rather than stored on the token: `is_authority` is a flag on `users`, while coordinator and mentor status come from `clubs.coordinator_id` and `topic_mentors`.
 
 ## Database
 
